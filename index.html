@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>3D Scroll Explosion</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Model with Scroll Explosion and Camera Approach</title>
   <style>
     body { margin: 0; overflow: hidden; }
     canvas { display: block; }
@@ -13,120 +13,120 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script>
-    let scene, camera, renderer, model, originalPositions = [], scrollProgress = 0, time = 0;
+    let scene, camera, renderer, model, originalPositions, scrollProgress = 0, time = 0;
 
+    // Инициализация сцены
     function init() {
       scene = new THREE.Scene();
-
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(0, 0.4, 1.7); // Зафиксированная позиция
+      camera.position.z = 1.7;
+      camera.position.y = 0.4;
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       document.body.appendChild(renderer.domElement);
 
+      // Освещение
       const light = new THREE.DirectionalLight(0xffffff, 0.8);
       light.position.set(1, 1, 1);
       scene.add(light);
       scene.add(new THREE.AmbientLight(0x404040));
 
+      // Загрузка модели
       const loader = new THREE.GLTFLoader();
-      loader.load('model.glb', (gltf) => {
-        model = gltf.scene;
-        model.rotation.y = 5.1;
-        scene.add(model);
+      loader.load(
+        'model.glb',
+        (gltf) => {
+          model = gltf.scene;
+          model.rotation.y = 5.1;
+          scene.add(model);
 
-        model.traverse((child) => {
-          if (child.isMesh) {
-            const geometry = child.geometry;
-            geometry.computeVertexNormals();
-            const positions = geometry.attributes.position.array;
-            const normals = geometry.attributes.normal.array;
-            originalPositions.push({
-              id: geometry.id,
-              positions: [...positions],
-              normals: [...normals],
-              geometry: geometry
-            });
-          }
-        });
+          // Сохранение исходных позиций вершин и расчет нормалей
+          originalPositions = [];
+          model.traverse((child) => {
+            if (child.isMesh) {
+              const geometry = child.geometry;
+              geometry.computeVertexNormals();
+              const positions = geometry.attributes.position.array;
+              const normals = geometry.attributes.normal.array;
+              originalPositions.push({ positions: [...positions], normals: [...normals] });
+              geometry.attributes.position.needsUpdate = true;
+            }
+          });
 
-        animate();
-      });
+          animate();
+        },
+        undefined,
+        (error) => {
+          console.error('Ошибка загрузки модели:', error);
+          alert('Не удалось загрузить модель model.glb. Проверьте путь к файлу или его наличие.');
+        }
+      );
 
+      // Обработка события прокрутки
       window.addEventListener('wheel', (event) => {
         if (!model) return;
-
         scrollProgress += event.deltaY * 0.001;
         scrollProgress = Math.max(0, Math.min(1, scrollProgress));
-
         updateModel();
-
-        if (scrollProgress === 1) {
-          setTimeout(() => {
-            window.location.href = 'nextpage.html';
-          }, 500);
-        }
-      });
-
-      window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
       });
     }
 
+    // Обновление позиций вершин
     function updateModel() {
       if (!model) return;
 
-      // Масштаб модели
-      const scale = 1 + scrollProgress * 1.5;
-      model.scale.set(scale, scale, scale);
+      // Перемещение модели ближе к камере
+      model.position.z = scrollProgress * 1.5; // Движение от z=0 к z=1.5
 
-      // Разлет вершин
       model.traverse((child) => {
         if (child.isMesh) {
-          const entry = originalPositions.find(e => e.id === child.geometry.id);
           const positions = child.geometry.attributes.position.array;
-          const normals = entry.normals;
-          const original = entry.positions;
-
+          const normals = child.geometry.attributes.normal.array;
+          const original = originalPositions[child.geometry.id] || originalPositions[0];
           for (let i = 0; i < positions.length; i += 3) {
-            const nx = normals[i];
-            const ny = normals[i + 1];
-            const nz = normals[i + 2];
-
+            const nx = original.normals[i];
+            const ny = original.normals[i + 1];
+            const nz = original.normals[i + 2];
+            
+            // Амплитуда зависит от scrollProgress
             let amplitude = 0;
-
-            if (scrollProgress <= 0.5) {
-              // Фаза 1: лёгкий пульсирующий разлет
-              const pulse = Math.sin(time * 5) * 0.5 + 0.5; // 0..1
-              amplitude = scrollProgress * pulse * 0.8; // до 0.4
-            } else {
-              // Фаза 2: прогрессивный взрыв
-              const t = (scrollProgress - 0.5) * 2; // нормализуем в 0..1
-              amplitude = 0.4 + t * t * 6; // экспоненциальный рост
+            if (scrollProgress > 0 && scrollProgress < 0.7) {
+              // Пульсирующий эффект: 4 цикла по 1.5 секунды
+              const frequency = (2 * Math.PI) / 1.5; // Один цикл за 1.5 секунды
+              const pulse = Math.sin(time * frequency) * 0.5 + 0.5; // Нормализованный sin от 0 до 1
+              amplitude = pulse * 0.02; // Максимальная амплитуда 0.02
+            } else if (scrollProgress >= 0.7) {
+              // Плавный и медленный взрывной эффект при скролле >= 70%
+              const t = (scrollProgress - 0.7) / 0.3; // Нормализация от 0 до 1 для оставшихся 30%
+              amplitude = t * t * 20; // Квадратичная кривая для плавности, максимум 20
             }
-
-            positions[i]     = original[i]     + nx * amplitude;
-            positions[i + 1] = original[i + 1] + ny * amplitude;
-            positions[i + 2] = original[i + 2] + nz * amplitude;
+            
+            positions[i] = original.positions[i] + nx * amplitude;
+            positions[i + 1] = original.positions[i + 1] + ny * amplitude;
+            positions[i + 2] = original.positions[i + 2] + nz * amplitude;
           }
-
           child.geometry.attributes.position.needsUpdate = true;
         }
       });
     }
 
+    // Анимация
     function animate() {
       requestAnimationFrame(animate);
       time += 0.016;
-      updateModel(); // Пульсация в первой фазе
+      updateModel();
       renderer.render(scene, camera);
     }
+
+    // Обработка изменения размера окна
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
 
     init();
   </script>
 </body>
 </html>
-
