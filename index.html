@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>3D Model with Scroll Explosion and Camera Approach</title>
+  <title>3D Model with Scroll Explosion and Pulsating Effect</title>
   <style>
     body { margin: 0; overflow: hidden; }
     canvas { display: block; }
@@ -13,7 +13,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script>
-    let scene, camera, renderer, model, originalPositions, scrollProgress = 0, time = 0, cameraLocked = false;
+    let scene, camera, renderer, model, originalPositions, scrollProgress = 0, time = 0;
 
     // Инициализация сцены
     function init() {
@@ -66,25 +66,18 @@
 
       // Обработка события прокрутки
       window.addEventListener('wheel', (event) => {
-        if (!model || cameraLocked) return; // Пропускаем, если модель не загружена или камера зафиксирована
+        if (!model) return; // Пропускаем, если модель не загружена
         scrollProgress += event.deltaY * 0.001; // Чувствительность прокрутки
         scrollProgress = Math.max(0, Math.min(1, scrollProgress)); // Ограничение 0–1
-        if (scrollProgress === 1) cameraLocked = true; // Фиксируем камеру при достижении максимума
         updateModel();
       });
     }
 
-    // Обновление позиций вершин и камеры
+    // Обновление позиций вершин для пульсирующего эффекта взрыва
     function updateModel() {
       if (!model) return; // Пропускаем, если модель не загружена
-
       // Перемещение модели ближе к камере
       model.position.z = scrollProgress * -1; // Движение от z=0 к z=-1
-
-      // Перемещение камеры ближе к модели
-      if (!cameraLocked) {
-        camera.position.z = 1.7 - scrollProgress * 1.2; // От z=1.7 к z=0.5
-      }
 
       model.traverse((child) => {
         if (child.isMesh) {
