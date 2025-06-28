@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>3D Model with Scroll Explosion Effect</title>
+  <title>3D Model with Scroll Explosion and Camera Approach</title>
   <style>
     body { margin: 0; overflow: hidden; }
     canvas { display: block; }
@@ -13,14 +13,14 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script>
-    let scene, camera, renderer, model, originalPositions, scrollProgress = 0;
+    let scene, camera, renderer, model, originalPositions, scrollProgress = 0, time = 0, cameraLocked = false;
 
     // Инициализация сцены
     function init() {
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.z = 1.7; // Уменьшено с 5 до 3 для приближения модели
-      camera.position.y = 0.4; // Уменьшено с 5 до 3 для приближения модели
+      camera.position.z = 1.7;
+      camera.position.y = 0.4;
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -66,16 +66,26 @@
 
       // Обработка события прокрутки
       window.addEventListener('wheel', (event) => {
-        if (!model) return; // Пропускаем, если модель не загружена
+        if (!model || cameraLocked) return; // Пропускаем, если модель не загружена или камера зафиксирована
         scrollProgress += event.deltaY * 0.001; // Чувствительность прокрутки
         scrollProgress = Math.max(0, Math.min(1, scrollProgress)); // Ограничение 0–1
+        if (scrollProgress === 1) cameraLocked = true; // Фиксируем камеру при достижении максимума
         updateModel();
       });
     }
 
-    // Обновление позиций вершин для эффекта взрыва
+    // Обновление позиций вершин и камеры
     function updateModel() {
       if (!model) return; // Пропускаем, если модель не загружена
+
+      // Перемещение модели ближе к камере
+      model.position.z = scrollProgress * -1; // Движение от z=0 к z=-1
+
+      // Перемещение камеры ближе к модели
+      if (!cameraLocked) {
+        camera.position.z = 1.7 - scrollProgress * 1.2; // От z=1.7 к z=0.5
+      }
+
       model.traverse((child) => {
         if (child.isMesh) {
           const positions = child.geometry.attributes.position.array;
@@ -86,10 +96,12 @@
             const nx = original.normals[i];
             const ny = original.normals[i + 1];
             const nz = original.normals[i + 2];
-            // Смещение вершин вдоль нормалей пропорционально scrollProgress
-            positions[i] = original.positions[i] + nx * scrollProgress * 5;
-            positions[i + 1] = original.positions[i + 1] + ny * scrollProgress * 5;
-            positions[i + 2] = original.positions[i + 2] + nz * scrollProgress * 5;
+            // Пульсирующий эффект с использованием sin и времени
+            const pulse = Math.sin(time * 5) * 0.5 + 0.5; // Частота и амплитуда пульсации
+            const amplitude = scrollProgress * pulse * 5; // Амплитуда зависит от scrollProgress
+            positions[i] = original.positions[i] + nx * amplitude;
+            positions[i + 1] = original.positions[i + 1] + ny * amplitude;
+            positions[i + 2] = original.positions[i + 2] + nz * amplitude;
           }
           child.geometry.attributes.position.needsUpdate = true;
         }
@@ -99,6 +111,8 @@
     // Анимация
     function animate() {
       requestAnimationFrame(animate);
+      time += 0.016; // Примерно 60 кадров в секунду (1/60)
+      updateModel(); // Обновляем модель в каждом кадре для пульсации
       renderer.render(scene, camera);
     }
 
