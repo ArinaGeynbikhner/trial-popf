@@ -1,132 +1,210 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>3D Model with Scroll Explosion and Camera Approach</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Increasing Pulse and Slower Approach</title>
   <style>
-    body { margin: 0; overflow: hidden; }
+    body { margin: 0; overflow: hidden; background: #000; }
     canvas { display: block; }
   </style>
 </head>
 <body>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-  <script>
-    let scene, camera, renderer, model, originalPositions, scrollProgress = 0, time = 0;
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+  let scene, camera, renderer, model;
+  let scrollProgress = 0, time = 0, scrollLocked = false, pulseStarted = false;
+  const pulseDuration = 1.5;
+  let pulseStartTime = 0;
+  let explosionStartTime = 0;
 
-    // Инициализация сцены
-    function init() {
-      scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.z = 1.7;
-      camera.position.y = 0.4;
+  // Для пульсации при скролле:
+  let lastScrollTime = 0;
+  const scrollPulseTimeout = 0.2; // секунды, за которые считается что идёт прокрутка
 
-      renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      document.body.appendChild(renderer.domElement);
+  let scrollPulseAmplitude = 0;
+  let scrollPulseMaxAmplitude = 0.03; // максимальная амплитуда пульсации
+  let scrollPulseStep = 0.005;        // шаг увеличения амплитуды на каждый скролл
 
-      // Освещение
-      const light = new THREE.DirectionalLight(0xffffff, 0.8);
-      light.position.set(1, 1, 1);
-      scene.add(light);
-      scene.add(new THREE.AmbientLight(0x404040));
+  function init() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
 
-      // Загрузка модели
-      const loader = new THREE.GLTFLoader();
-      loader.load(
-        'model.glb',
-        (gltf) => {
-          model = gltf.scene;
-          model.rotation.y = 5.1;
-          scene.add(model);
+    camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 0.4, 3.5);
 
-          // Сохранение исходных позиций вершин и расчет нормалей
-          originalPositions = [];
-          model.traverse((child) => {
-            if (child.isMesh) {
-              const geometry = child.geometry;
-              geometry.computeVertexNormals();
-              const positions = geometry.attributes.position.array;
-              const normals = geometry.attributes.normal.array;
-              originalPositions.push({ positions: [...positions], normals: [...normals] });
-              geometry.attributes.position.needsUpdate = true;
-            }
-          });
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
 
-          animate();
-        },
-        undefined,
-        (error) => {
-          console.error('Ошибка загрузки модели:', error);
-          alert('Не удалось загрузить модель model.glb. Проверьте путь к файлу или его наличие.');
-        }
-      );
+    const light = new THREE.DirectionalLight(0xffffff, 0.8);
+    light.position.set(1, 1, 1);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x404040));
 
-      // Обработка события прокрутки
-      window.addEventListener('wheel', (event) => {
-        if (!model) return;
-        scrollProgress += event.deltaY * 0.001;
-        scrollProgress = Math.max(0, Math.min(1, scrollProgress));
-        updateModel();
-      });
-    }
+    const loader = new THREE.GLTFLoader();
+    loader.load(
+      'model.glb',
+      (gltf) => {
+        model = gltf.scene;
+        model.rotation.y = 5.1;
+        scene.add(model);
 
-    // Обновление позиций вершин
-    function updateModel() {
-      if (!model) return;
+        model.traverse((child) => {
+          if (child.isMesh) {
+            const geometry = child.geometry;
+            geometry.computeVertexNormals();
 
-      // Перемещение модели ближе к камере
-      model.position.z = scrollProgress * 1.5; // Движение от z=0 к z=1.5
+            const positionsCopy = new Float32Array(geometry.attributes.position.array.length);
+            positionsCopy.set(geometry.attributes.position.array);
 
-      model.traverse((child) => {
-        if (child.isMesh) {
-          const positions = child.geometry.attributes.position.array;
-          const normals = child.geometry.attributes.normal.array;
-          const original = originalPositions[child.geometry.id] || originalPositions[0];
-          for (let i = 0; i < positions.length; i += 3) {
-            const nx = original.normals[i];
-            const ny = original.normals[i + 1];
-            const nz = original.normals[i + 2];
-            
-            // Амплитуда зависит от scrollProgress
-            let amplitude = 0;
-            if (scrollProgress > 0 && scrollProgress < 0.7) {
-              // Пульсирующий эффект: 4 цикла по 1.5 секунды
-              const frequency = (2 * Math.PI) / 1.5; // Один цикл за 1.5 секунды
-              const pulse = Math.sin(time * frequency) * 0.5 + 0.5; // Нормализованный sin от 0 до 1
-              amplitude = pulse * 0.02; // Максимальная амплитуда 0.02
-            } else if (scrollProgress >= 0.7) {
-              // Плавный и медленный взрывной эффект при скролле >= 70%
-              const t = (scrollProgress - 0.7) / 0.3; // Нормализация от 0 до 1 для оставшихся 30%
-              amplitude = t * t * 20; // Квадратичная кривая для плавности, максимум 20
-            }
-            
-            positions[i] = original.positions[i] + nx * amplitude;
-            positions[i + 1] = original.positions[i + 1] + ny * amplitude;
-            positions[i + 2] = original.positions[i + 2] + nz * amplitude;
+            const normalsCopy = new Float32Array(geometry.attributes.normal.array.length);
+            normalsCopy.set(geometry.attributes.normal.array);
+
+            child.userData.originalData = {
+              positions: positionsCopy,
+              normals: normalsCopy
+            };
+
+            geometry.attributes.position.needsUpdate = true;
           }
-          child.geometry.attributes.position.needsUpdate = true;
-        }
-      });
-    }
+        });
 
-    // Анимация
-    function animate() {
-      requestAnimationFrame(animate);
-      time += 0.016;
-      updateModel();
-      renderer.render(scene, camera);
-    }
+        animate();
+      },
+      undefined,
+      (error) => {
+        console.error('Ошибка загрузки модели:', error);
+        alert('Не удалось загрузить модель model.glb.');
+      }
+    );
 
-    // Обработка изменения размера окна
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+    window.addEventListener('wheel', (event) => {
+      if (!model || scrollLocked || pulseStarted) return;
+
+      scrollProgress += event.deltaY * 0.0004; // замедляем прокрутку для медленного приближения
+      scrollProgress = Math.max(0, Math.min(0.7, scrollProgress));
+
+      lastScrollTime = time;
+
+      // Увеличиваем амплитуду пульсации, но не больше максимума
+      scrollPulseAmplitude = Math.min(scrollPulseMaxAmplitude, scrollPulseAmplitude + scrollPulseStep);
+
+      if (scrollProgress >= 0.7) {
+        pulseStarted = true;
+        pulseStartTime = time;
+      }
     });
+  }
 
+  function updateModel() {
+    if (!model) return;
+
+    if (!scrollLocked) {
+      const t = scrollProgress / 0.7;
+      model.position.z = t * t * 1.0; // увеличили фактор для более плавного приближения
+    }
+
+    const timeSinceScroll = time - lastScrollTime;
+    if (!pulseStarted && timeSinceScroll < scrollPulseTimeout) {
+      // При активном скролле амплитуда пульсации уже увеличена — просто поддерживаем её
+      scrollPulseAmplitude += (scrollPulseAmplitude - scrollPulseAmplitude) * 0.1; // фактически без изменений
+    } else {
+      // Затухание амплитуды, но не ниже 0
+      scrollPulseAmplitude += (0 - scrollPulseAmplitude) * 0.1;
+    }
+
+    model.traverse((child) => {
+      if (child.isMesh) {
+        const geometry = child.geometry;
+        const positions = geometry.attributes.position.array;
+
+        const original = child.userData.originalData;
+        if (!original) return;
+
+        for (let i = 0; i < positions.length; i += 3) {
+          const ox = original.positions[i];
+          const oy = original.positions[i + 1];
+          const oz = original.positions[i + 2];
+
+          const nx = original.normals[i];
+          const ny = original.normals[i + 1];
+          const nz = original.normals[i + 2];
+
+          let scatterX = nx;
+          let scatterY = ny;
+          let scatterZ = nz;
+
+          let amplitude = 0;
+
+          if (!pulseStarted && scrollPulseAmplitude > 0) {
+            const frequency = (2 * Math.PI) / 1.5;
+            const pulse = Math.sin(time * frequency) * 0.5 + 0.5;
+            amplitude = pulse * scrollPulseAmplitude;
+          }
+
+          if (pulseStarted) {
+            const pulseProgress = (time - pulseStartTime) / pulseDuration;
+
+            if (pulseProgress < 0.5) {
+              const pulse = Math.sin(pulseProgress * Math.PI);
+              amplitude = pulse * 0.05;
+            } else {
+              if (!scrollLocked) {
+                scrollLocked = true;
+                explosionStartTime = time;
+              }
+              const tExplode = Math.min((time - explosionStartTime) / 1, 1);
+              amplitude = (0.05) * (1 - tExplode) + tExplode * tExplode * 20;
+            }
+          }
+
+          if (scrollLocked && time >= explosionStartTime + 1) {
+            const length = Math.sqrt(nx * nx + ny * ny + nz * nz);
+            if (length > 0) {
+              scatterX = nx / length;
+              scatterY = ny / length;
+              scatterZ = nz / length;
+            } else {
+              scatterX = 0;
+              scatterY = 0;
+              scatterZ = 0;
+            }
+            const tExplode = Math.min((time - explosionStartTime - 1) / 1, 1);
+            amplitude = tExplode * tExplode * 20;
+          }
+
+          positions[i] = ox + scatterX * amplitude;
+          positions[i + 1] = oy + scatterY * amplitude;
+          positions[i + 2] = oz + scatterZ * amplitude;
+        }
+
+        geometry.attributes.position.needsUpdate = true;
+        geometry.computeVertexNormals();
+      }
+    });
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    time += 0.016;
+    updateModel();
+    renderer.render(scene, camera);
+  }
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  try {
     init();
-  </script>
+  } catch (error) {
+    console.error('Ошибка инициализации:', error);
+    alert('Ошибка при инициализации сцены.');
+  }
+</script>
 </body>
 </html>
