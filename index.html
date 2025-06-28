@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Increasing Pulse and Slower Approach</title>
+  <title>Fixed Single Explosion</title>
   <style>
     body { margin: 0; overflow: hidden; background: #000; }
     canvas { display: block; }
@@ -14,18 +14,27 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script>
   let scene, camera, renderer, model;
-  let scrollProgress = 0, time = 0, scrollLocked = false, pulseStarted = false;
+  let scrollProgress = 0, time = 0;
+  let scrollLocked = false, pulseStarted = false;
   const pulseDuration = 1.5;
   let pulseStartTime = 0;
   let explosionStartTime = 0;
+  let explosionStarted = false;
 
-  // Для пульсации при скролле:
   let lastScrollTime = 0;
-  const scrollPulseTimeout = 0.2; // секунды, за которые считается что идёт прокрутка
+  const scrollPulseTimeout = 0.2;
 
   let scrollPulseAmplitude = 0;
-  let scrollPulseMaxAmplitude = 0.03; // максимальная амплитуда пульсации
-  let scrollPulseStep = 0.005;        // шаг увеличения амплитуды на каждый скролл
+  const scrollPulseMaxAmplitude = 0.03;
+  const scrollPulseStep = 0.005;
+
+  function startExplosion() {
+    if (explosionStarted) return;
+    scrollLocked = true;
+    explosionStartTime = time;
+    explosionStarted = true;
+    console.log('Explosion started at time:', time);
+  }
 
   function init() {
     scene = new THREE.Scene();
@@ -36,12 +45,23 @@
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true; // Включаем тени
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Мягкие тени для качества
     document.body.appendChild(renderer.domElement);
 
-    const light = new THREE.DirectionalLight(0xffffff, 0.8);
-    light.position.set(1, 1, 1);
-    scene.add(light);
-    scene.add(new THREE.AmbientLight(0x404040));
+    // Яркий направленный свет сверху, слегка сдвинут назад
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0); // Высокая интенсивность
+    directionalLight.position.set(0, 5, 0.5); // Свет сверху, сдвинут назад
+    directionalLight.castShadow = true; // Включаем тени
+    directionalLight.shadow.mapSize.width = 1024; // Качество карты теней
+    directionalLight.shadow.mapSize.height = 1024;
+    directionalLight.shadow.camera.near = 0.5;
+    directionalLight.shadow.camera.far = 10;
+    directionalLight.shadow.camera.left = -2;
+    directionalLight.shadow.camera.right = 2;
+    directionalLight.shadow.camera.top = 2;
+    directionalLight.shadow.camera.bottom = -2;
+    scene.add(directionalLight);
 
     const loader = new THREE.GLTFLoader();
     loader.load(
@@ -49,12 +69,23 @@
       (gltf) => {
         model = gltf.scene;
         model.rotation.y = 5.1;
+        model.castShadow = true; // Модель отбрасывает тени
+        model.receiveShadow = true; // Модель принимает тени
         scene.add(model);
 
         model.traverse((child) => {
           if (child.isMesh) {
             const geometry = child.geometry;
             geometry.computeVertexNormals();
+            child.castShadow = true; // Меш отбрасывает тени
+            child.receiveShadow = true; // Меш принимает тени
+
+            // Установка белого материала
+            child.material = new THREE.MeshStandardMaterial({
+              color: 0x808080, // Белый цвет
+              roughness: 0.5, // Средняя шероховатость для реалистичности
+              metalness: 0.1 // Небольшая металлическая отражаемость
+            });
 
             const positionsCopy = new Float32Array(geometry.attributes.position.array.length);
             positionsCopy.set(geometry.attributes.position.array);
@@ -83,12 +114,11 @@
     window.addEventListener('wheel', (event) => {
       if (!model || scrollLocked || pulseStarted) return;
 
-      scrollProgress += event.deltaY * 0.0004; // замедляем прокрутку для медленного приближения
+      scrollProgress += event.deltaY * 0.0004;
       scrollProgress = Math.max(0, Math.min(0.7, scrollProgress));
 
       lastScrollTime = time;
 
-      // Увеличиваем амплитуду пульсации, но не больше максимума
       scrollPulseAmplitude = Math.min(scrollPulseMaxAmplitude, scrollPulseAmplitude + scrollPulseStep);
 
       if (scrollProgress >= 0.7) {
@@ -103,16 +133,7 @@
 
     if (!scrollLocked) {
       const t = scrollProgress / 0.7;
-      model.position.z = t * t * 1.0; // увеличили фактор для более плавного приближения
-    }
-
-    const timeSinceScroll = time - lastScrollTime;
-    if (!pulseStarted && timeSinceScroll < scrollPulseTimeout) {
-      // При активном скролле амплитуда пульсации уже увеличена — просто поддерживаем её
-      scrollPulseAmplitude += (scrollPulseAmplitude - scrollPulseAmplitude) * 0.1; // фактически без изменений
-    } else {
-      // Затухание амплитуды, но не ниже 0
-      scrollPulseAmplitude += (0 - scrollPulseAmplitude) * 0.1;
+      model.position.z = t * t * 0.5;
     }
 
     model.traverse((child) => {
@@ -138,29 +159,27 @@
 
           let amplitude = 0;
 
+          // Пульсация до начала взрыва
           if (!pulseStarted && scrollPulseAmplitude > 0) {
             const frequency = (2 * Math.PI) / 1.5;
             const pulse = Math.sin(time * frequency) * 0.5 + 0.5;
             amplitude = pulse * scrollPulseAmplitude;
           }
 
-          if (pulseStarted) {
+          // Пульсация перед взрывом
+          if (pulseStarted && !scrollLocked) {
             const pulseProgress = (time - pulseStartTime) / pulseDuration;
-
             if (pulseProgress < 0.5) {
               const pulse = Math.sin(pulseProgress * Math.PI);
               amplitude = pulse * 0.05;
             } else {
-              if (!scrollLocked) {
-                scrollLocked = true;
-                explosionStartTime = time;
-              }
-              const tExplode = Math.min((time - explosionStartTime) / 1, 1);
-              amplitude = (0.05) * (1 - tExplode) + tExplode * tExplode * 20;
+              startExplosion(); // Начать взрыв
             }
           }
 
-          if (scrollLocked && time >= explosionStartTime + 1) {
+          // Взрыв (единая логика)
+          if (scrollLocked) {
+            const tExplode = Math.min((time - explosionStartTime) / 2, 1); // Увеличиваем длительность до 2 секунд
             const length = Math.sqrt(nx * nx + ny * ny + nz * nz);
             if (length > 0) {
               scatterX = nx / length;
@@ -171,8 +190,7 @@
               scatterY = 0;
               scatterZ = 0;
             }
-            const tExplode = Math.min((time - explosionStartTime - 1) / 1, 1);
-            amplitude = tExplode * tExplode * 20;
+            amplitude = tExplode * tExplode * 20; // Финальный разлет
           }
 
           positions[i] = ox + scatterX * amplitude;
